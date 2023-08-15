@@ -1,0 +1,108 @@
+#!/bin/bash
+
+ANNOUNCE_URL_CONF="announce_url.conf"
+TORRENT_OUTPUT_DIR="$HOME/torrents"
+PIECE_SIZE_CONF="torrent_piece_size.conf"
+
+if [ "$#" -lt 2 ]; then
+  echo "Usage:"
+  echo "  $0 <PATH> <SOURCE>"
+  exit 1
+fi
+
+# Make sure torrent output directory exists
+if [ ! -d "$TORRENT_OUTPUT_DIR" ]; then
+    mkdir -p "$TORRENT_OUTPUT_DIR"
+fi
+
+# Add a trailing slash if it's not already present
+if [[ ! "$TORRENT_OUTPUT_DIR" =~ /$ ]]; then
+    TORRENT_OUTPUT_DIR="$TORRENT_OUTPUT_DIR/"
+fi
+
+get_size() {
+  local size_bytes
+  if [ -d "$1" ]; then
+      size_bytes=$(du -sb "$1" | awk '{print $1}')
+  elif [ -f "$1" ]; then
+      size_bytes=$(stat -c %s "$1")
+  else
+      echo "Invalid path: $1"
+      exit 1
+  fi
+  echo "$size_bytes"
+}
+
+calculate_value() {
+  local size_mb=$(($1 / 1024 / 1024))
+  
+  while IFS=: read -r range value; do
+    IFS=- read -r min max <<< "$range"
+    if ((size_mb >= min && size_mb <= max)); then
+      echo "$value"
+      return
+    fi
+  done < "$PIECE_SIZE_CONF"
+  
+  echo "Torrent size not found in specified config file."
+  exit 1
+}
+
+get_announce_url() {
+  local param_name="$source"
+  local value=""
+
+  # Check if the config file exists
+  if [ -f "$ANNOUNCE_URL_CONF" ]; then
+    while IFS='=' read -r key val; do
+      if [ "$key" = "$param_name" ]; then
+        value="$val"
+        break
+      fi
+    done < "$ANNOUNCE_URL_CONF"
+  fi
+
+  echo "$value"
+}
+
+path="$1"
+size=$(get_size "$path")
+piece_size=$(calculate_value "$size")
+source="${2^^}"
+output_name=$(basename "$1")-$source
+announce_url=$(get_announce_url "$source")
+
+if ! [ -n "$announce_url" ]; then
+  echo "Announce URL for "$source" not found in $ANNOUNCE_URL_CONF"
+  exit 1;
+fi
+
+if ! [[ "$piece_size" =~ ^[0-9]+$ ]]; then
+  echo "Torrent size not found in $PIECE_SIZE_CONF"
+  exit 1;
+fi
+
+echo Source: "$source"
+echo Announce URL: "$announce_url"
+echo Executing:
+echo -e "  mktorrent\n    -p\n    -l "$piece_size"\n    -s "$source"\n    -a "$announce_url"\n    "$path"\n    -o "$TORRENT_OUTPUT_DIR$output_name.torrent""
+echo ""
+
+read -p "Do you want to proceed? (Y/n): " choice
+choice=${choice:-Y} 
+
+if [[ $choice == [Yy] ]]; then
+    file_path=$TORRENT_OUTPUT_DIR$output_name.torrent
+
+    # Delete existing torrent file
+    if [ -e "$file_path" ]; then
+      rm "$file_path"
+    fi
+
+    echo "Creating torrent..."
+    mktorrent -l "$piece_size" -p -s "$source" -a "$announce_url" "$path" -o "$TORRENT_OUTPUT_DIR$output_name.torrent"
+    echo -e "\nAll done! Your torrent file is here: "
+    echo "$TORRENT_OUTPUT_DIR$output_name.torrent"
+else
+    echo "Aborted."
+fi
