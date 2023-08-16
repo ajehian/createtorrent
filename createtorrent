@@ -1,8 +1,12 @@
 #!/bin/bash
 
-ANNOUNCE_URL_CONF="announce_url.conf"
+# Allow alias to read the config file in the repository folder
+SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
+
+ANNOUNCE_URL_CONF="$SCRIPT_DIR/announce_url.conf"
+PIECE_SIZE_CONF="$SCRIPT_DIR/torrent_piece_size.conf"
+
 TORRENT_OUTPUT_DIR="$HOME/torrents"
-PIECE_SIZE_CONF="torrent_piece_size.conf"
 
 if [ "$#" -lt 2 ]; then
   echo "Usage:"
